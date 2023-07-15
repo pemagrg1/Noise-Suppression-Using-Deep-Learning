@@ -1,0 +1,7 @@
+MODEL1: 1000 clean n 1000 noisy data with batch size 800 epoch=20
+		5000 on training 5000 on test
+
+MODEL2: clean:8000 noisy:8000 batchsize:12000 epoch:20
+		train_dataset = get_dataset(noisy_train[:25000],clean_train[:25000])
+		test_dataset = get_dataset(noisy_train[25000:],clean_train[25000:])
+
