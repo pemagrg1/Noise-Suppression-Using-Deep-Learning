@@ -1,3 +1,4 @@
+import os
 import tensorflow as tf
 from tensorflow.keras.layers import Conv1D,Conv1DTranspose,Concatenate,Input
 import numpy as np
@@ -6,6 +7,8 @@ import glob
 from tqdm.notebook import tqdm
 import librosa.display
 import matplotlib.pyplot as plt
+
+os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 clean_sounds = glob.glob('/dataset/CleanData/*')
 noisy_sounds = glob.glob('/dataset/NoisyData/*')
