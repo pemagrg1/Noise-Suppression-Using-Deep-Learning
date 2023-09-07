@@ -1,4 +1,3 @@
-import os
 import tensorflow as tf
 from tensorflow.keras.layers import Conv1D,Conv1DTranspose,Concatenate,Input
 import numpy as np
@@ -8,17 +7,22 @@ from tqdm.notebook import tqdm
 import librosa.display
 import matplotlib.pyplot as plt
 
-os.environ["CUDA_VISIBLE_DEVICES"]="1"
+gpu_options = tf.compat.v1.GPUOptions(allow_growth=True)
+session = tf.compat.v1.InteractiveSession(config=tf.compat.v1.ConfigProto(gpu_options=gpu_options))
 
-clean_sounds = glob.glob('/dataset/CleanData/*')
-noisy_sounds = glob.glob('/dataset/NoisyData/*')
-print(len(clean_sounds))
+data_path = "dataset"
+clean_sounds = glob.glob(data_path+'/CleanData/*')
+noisy_sounds = glob.glob(data_path+'/NoisyData/*')
 
-# print(type(clean_sounds))
-# clean_sounds = clean_sounds[:1000]
-# noisy_sounds = noisy_sounds[:1000]
-# print(len(clean_sounds))
+# Splittting the dataset into train and test
+test_clean_sounds = clean_sounds[8000:] # 3571 data
+test_noisy_sounds = noisy_sounds[8000:]
+clean_sounds = clean_sounds[:8000]
+noisy_sounds = noisy_sounds[:8000]
 
+batching_size = 12000
+
+# PREPARE TRAIN SET
 clean_sounds_list,_ = tf.audio.decode_wav(tf.io.read_file(clean_sounds[0]),desired_channels=1)
 for i in tqdm(clean_sounds[1:]):
   so,_ = tf.audio.decode_wav(tf.io.read_file(i),desired_channels=1)
@@ -31,8 +35,6 @@ for i in tqdm(noisy_sounds[1:]):
 
 clean_sounds_list.shape,noisy_sounds_list.shape
 
-batching_size = 12000
-
 clean_train,noisy_train = [],[]
 
 for i in tqdm(range(0,clean_sounds_list.shape[0]-batching_size,batching_size)):
@@ -40,34 +42,47 @@ for i in tqdm(range(0,clean_sounds_list.shape[0]-batching_size,batching_size)):
   noisy_train.append(noisy_sounds_list[i:i+batching_size])
 
 clean_train = tf.stack(clean_train)
+clean_train.shape
+
 noisy_train = tf.stack(noisy_train)
+noisy_train.shape
 
-clean_train.shape,noisy_train.shape
+# PREPARE TEST SET
+test_clean_sounds_list,_ = tf.audio.decode_wav(tf.io.read_file(test_clean_sounds[0]),desired_channels=1)
+for i in tqdm(test_clean_sounds[1:]):
+  so,_ = tf.audio.decode_wav(tf.io.read_file(i),desired_channels=1)
+  test_clean_sounds_list = tf.concat((test_clean_sounds_list,so),0)
 
+test_noisy_sounds_list,_ = tf.audio.decode_wav(tf.io.read_file(test_noisy_sounds[0]),desired_channels=1)
+for i in tqdm(test_noisy_sounds[1:]):
+  so,_ = tf.audio.decode_wav(tf.io.read_file(i),desired_channels=1)
+  test_noisy_sounds_list = tf.concat((test_noisy_sounds_list,so),0)
+
+test_clean_sounds_list.shape,test_noisy_sounds_list.shape
+
+clean_test,noisy_test = [],[]
+
+for i in tqdm(range(0,test_clean_sounds_list.shape[0]-batching_size,batching_size)):
+  clean_test.append(test_clean_sounds_list[i:i+batching_size])
+  noisy_test.append(test_noisy_sounds_list[i:i+batching_size])
+
+clean_test = tf.stack(clean_test)
+clean_test.shape
+noisy_test = tf.stack(noisy_test)
+noisy_test.shape
+
+# Creating tf.data.Dataset
 def get_dataset(x_train,y_train):
-    dataset = tf.data.Dataset.from_tensor_slices((x_train,y_train))
-    dataset = dataset.shuffle(100).batch(64,drop_remainder=True)
-    return dataset
+  dataset = tf.data.Dataset.from_tensor_slices((x_train,y_train))
+  dataset = dataset.shuffle(100).batch(64,drop_remainder=True)
+  return dataset
 
-# train_dataset = get_dataset(noisy_train[:40000],clean_train[:40000])
-# test_dataset = get_dataset(noisy_train[40000:],clean_train[40000:])
+train_dataset = get_dataset(noisy_train, clean_train)
+test_dataset = get_dataset(noisy_test, clean_test)
 
-train_dataset = get_dataset(noisy_train[:50],clean_train[:50])
-test_dataset = get_dataset(noisy_train[50:],clean_train[50:])
-
-# from matplotlib import pyplot as plt
-import matplotlib.pyplot as plt
-
-
-# librosa.display.waveshow(np.squeeze(clean_train[5].numpy(),axis=-1))
-# librosa.display.waveshow(data, sr=sampling_rate)
-
-# plt.show()
-
-# librosa.display.waveshow(np.squeeze(noisy_train[5].numpy(),axis=-1))
-# plt.show()
-
-# Model
+# CREATING THE MODEL
+# series_input = Input(shape = (series_input_train.shape[1],1,))
+# inp = None,series_input
 inp = Input(shape=(batching_size,1))
 c1 = Conv1D(2,32,2,'same',activation='relu')(inp)
 c2 = Conv1D(4,32,2,'same',activation='relu')(c1)
@@ -91,17 +106,12 @@ dc7 = Conv1DTranspose(1,32,1,padding='same',activation='linear')(conc)
 model = tf.keras.models.Model(inp,dc7)
 model.summary()
 
-tf.keras.utils.plot_model(model,show_shapes=True,show_layer_names=False)
+# TRAINING THE MODEL
+model.compile(optimizer=tf.keras.optimizers.Adam(0.002),loss=tf.keras.losses.MeanAbsoluteError())
+history = model.fit(train_dataset,epochs=20)
 
-# Training
-print("===TRAINING=====")
-model.compile(optimizer=tf.keras.optimizers.Adam(0.002),loss=tf.keras.losses.MeanAbsoluteError(), run_eagerly=True)
-history = model.fit(train_dataset,epochs=1)
+# EVALUATE THE MODEL
+model.evaluate(test_dataset)
 
-from IPython.display import Audio
-# Audio(np.squeeze(noisy_train[22].numpy()),rate=16000)
-
-Audio(tf.squeeze(model.predict(tf.expand_dims(tf.expand_dims(noisy_train[22],-1),0))),rate=16000)
-print(model.evaluate(test_dataset))
-
-model.save('NoiseSuppressionModel_Model_server.h5')
+# SAVE THE MODEL
+model.save('NoiseSuppressionModel_Model.h5')
