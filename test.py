@@ -6,8 +6,8 @@ from tqdm.notebook import tqdm
 
 
 def create_model():
-    batching_size = 12000
-    inp = Input(shape=(batching_size, 1))
+    audio_len_split_size = 12000
+    inp = Input(shape=(audio_len_split_size, 1))
     c1 = Conv1D(2, 32, 2, 'same', activation='relu')(inp)
     c2 = Conv1D(4, 32, 2, 'same', activation='relu')(c1)
     c3 = Conv1D(8, 32, 2, 'same', activation='relu')(c2)
@@ -41,11 +41,11 @@ def inference_preprocess(path):
     audio = get_audio(path)
     audio_len = audio.shape[0]
     batches = []
-    for i in range(0, audio_len-batching_size, batching_size):
-        batches.append(audio[i:i+batching_size])
+    for i in range(0, audio_len-audio_len_split_size, audio_len_split_size):
+        batches.append(audio[i:i+audio_len_split_size])
 
-    batches.append(audio[-batching_size:])
-    diff = audio_len - (i + batching_size)
+    batches.append(audio[-audio_len_split_size:])
+    diff = audio_len - (i + audio_len_split_size)
     return tf.stack(batches), diff
 
 
@@ -62,11 +62,10 @@ def predict(path):
 model = create_model()
 model.load_weights('NoiseSuppressionModel_Model.h5')
 
-batching_size = 12000
-# rate = 44100
-rate = 16000
+audio_len_split_size = 12000
+sample_rate = 16000
 
 audio_path = "NoisyData/p226_006.wav"
 data = tf.squeeze(predict(audio_path))
 scaled = np.int16(data / np.max(np.abs(data)) * 32767)
-write('suppressed_audio_p226_006.wav', rate, scaled)
+write('suppressed_audio_p226_006.wav', sample_rate, scaled)
